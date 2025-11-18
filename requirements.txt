@@ -1,0 +1,10 @@
+yfinance
+requests
+beautifulsoup4
+lxml
+sqlalchemy
+pandas
+numpy
+flask
+nltk  
+newsapi-python  
