@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Recommendations</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .back { margin-top: 20px; }
+        .back a { padding: 10px; background: #007bff; color: white; text-decoration: none; }
+        .back a:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>Your Personalized Trade Recommendations</h1>
+    {% if recommendations %}
+    <p>Based on your inputs, here are the suggested trades:</p>
+    <table>
+        <tr>
+            <th>Ticker</th>
+            <th>Company</th>
+            <th>Sector</th>
+            <th>Shares to Buy</th>
+            <th>Price per Share ($)</th>
+            <th>Total Cost ($)</th>
+            <th>Score</th>
+            <th>Why This Trade</th>
+        </tr>
+        {% for rec in recommendations %}
+        <tr>
+            <td>{{ rec.ticker }}</td>
+            <td>{{ rec.company_name }}</td>
+            <td>{{ rec.sector }}</td>
+            <td>{{ rec.shares }}</td>
+            <td>{{ rec.price }}</td>
+            <td>{{ rec.total_cost }}</td>
+            <td>{{ rec.score }}</td>
+            <td>
+                <ul>
+                {% for reason in rec.reasoning %}
+                    <li>{{ reason }}</li>
+                {% endfor %}
+                </ul>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No trade recommendations found based on current market conditions and your criteria. Try adjusting your risk tolerance or investment goals.</p>
+    {% endif %}
+    <div class="back">
+        <a href="/">Get New Recommendations</a>
+    </div>
+</body>
+</html>
