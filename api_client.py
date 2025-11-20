@@ -8,7 +8,8 @@ load_dotenv()
 
 class MarketDataClient:
     def __init__(self):
-        self.newsapi = NewsApiClient(api_key=os.getenv('NEWS_API_KEY'))
+        api_key = os.getenv('NEWS_API_KEY')
+        self.newsapi = NewsApiClient(api_key=api_key) if api_key else None
 
     def get_price_data(self, ticker, period='1y'):
         """Fetch historical price data for a ticker."""
@@ -31,10 +32,17 @@ class MarketDataClient:
 
     def get_news_headlines(self, query='finance', language='en', page_size=10):
         """Fetch recent news headlines."""
-        top_headlines = self.newsapi.get_top_headlines(q=query, language=language, page_size=page_size)
-        return top_headlines['articles']
+        if not self.newsapi:
+            return []
+        try:
+            top_headlines = self.newsapi.get_top_headlines(q=query, language=language, page_size=page_size)
+            return top_headlines['articles']
+        except:
+            return []
 
     def get_company_news(self, ticker, page_size=10):
         """Fetch news specific to a company."""
+        if not self.newsapi:
+            return []
         query = ticker
         return self.get_news_headlines(query=query, page_size=page_size)
