@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from .models import Base, Asset, PriceData, News
+from models import Base, Asset, PriceData, News
 import pandas as pd
 
 engine = create_engine('sqlite:///market_data.db')
