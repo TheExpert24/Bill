@@ -13,36 +13,75 @@ class PositionSizer:
         self.diversification_factor = diversification_factor
 
     def size_positions(self, ranked_assets, current_prices, volatilities=None):
-        """Size positions based on scores, prices, and constraints."""
+        """Size positions for top N assets, ensuring allocation even for small capital."""
         positions = {}
-        remaining_capital = self.total_capital
-        total_score = sum(score for _, score in ranked_assets if score > 0)
+        
+        if not ranked_assets:
+            return positions
+        
+        positive_assets = [(t, s) for t, s in ranked_assets if s > 0 and t in current_prices]
+        
+        if not positive_assets:
+            print("Warning: No assets with positive scores. Taking top assets regardless of score.")
+            positive_assets = [(t, s) for t, s in ranked_assets if t in current_prices]
+            if not positive_assets:
+                return positions
+        
+        total_score = sum(score for _, score in positive_assets)
+        if total_score <= 0:
+            total_score = len(positive_assets)
+            positive_assets = [(t, 1.0) for t, _ in positive_assets]
+        
+        print(f"Position sizing for {len(positive_assets)} stocks with positive signals...")
 
-        for ticker, score in ranked_assets:
-            if score <= 0 or ticker not in current_prices:
-                continue
-
+        allocations = []
+        for ticker, score in positive_assets:
             price = current_prices[ticker]
-            volatility = volatilities.get(ticker, 0.2) if volatilities else 0.2  # Default 20% vol
+            volatility = volatilities.get(ticker, 0.2) if volatilities else 0.2
 
-            # Base allocation proportional to score
-            base_allocation = (score / total_score) * self.total_capital * self.diversification_factor
+            score_allocation = (score / total_score) * self.total_capital * self.diversification_factor
 
-            # Adjust for risk tolerance
-            risk_adjusted_allocation = min(base_allocation, self.risk_tolerance * self.total_capital / volatility)
+            risk_adjusted_allocation = min(score_allocation, self.risk_tolerance * self.total_capital / max(volatility, 0.05))
 
-            # Cap at max allocation
             allocation = min(risk_adjusted_allocation, self.max_allocation_per_asset * self.total_capital)
 
-            # Ensure within remaining capital
-            allocation = min(allocation, remaining_capital)
-
-            if allocation > 0:
+            if allocation >= price * 0.5:
+                allocations.append((ticker, allocation, price, score))
+        
+        allocations.sort(key=lambda x: x[3], reverse=True)
+        
+        remaining_capital = self.total_capital
+        for ticker, allocation, price, score in allocations:
+            if remaining_capital <= 0:
+                break
+                
+            actual_allocation = min(allocation, remaining_capital)
+            
+            if actual_allocation >= price:
+                shares = int(actual_allocation // price)
+                if shares > 0:
+                    positions[ticker] = shares
+                    remaining_capital -= shares * price
+        
+        if not positions and allocations:
+            print(f"Warning: Capital too small for regular allocation. Using equal-weight for affordable stocks...")
+            affordable = [(t, p) for t, a, p, s in allocations if p <= self.total_capital / len(allocations[:10])]
+            if not affordable:
+                affordable = [(t, p) for t, a, p, s in allocations if p <= self.total_capital]
+            
+            equal_weight = self.total_capital / max(len(affordable), 1)
+            remaining_capital = self.total_capital
+            
+            for ticker, price in affordable:
+                if remaining_capital < price:
+                    continue
+                allocation = min(equal_weight, remaining_capital)
                 shares = int(allocation // price)
                 if shares > 0:
                     positions[ticker] = shares
                     remaining_capital -= shares * price
-
+        
+        print(f"Generated {len(positions)} positions using ${self.total_capital - remaining_capital:.2f} of ${self.total_capital:.2f}")
         return positions
 
     def get_portfolio_value(self, positions, current_prices):
