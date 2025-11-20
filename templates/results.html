@@ -27,6 +27,7 @@
             <th>Price per Share ($)</th>
             <th>Total Cost ($)</th>
             <th>Score</th>
+            <th>Expected Return (%)</th>
             <th>Why This Trade</th>
         </tr>
         {% for rec in recommendations %}
@@ -38,6 +39,7 @@
             <td>{{ rec.price }}</td>
             <td>{{ rec.total_cost }}</td>
             <td>{{ rec.score }}</td>
+            <td>{{ rec.expected_return }}</td>
             <td>
                 <ul>
                 {% for reason in rec.reasoning %}
