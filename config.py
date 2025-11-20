@@ -39,11 +39,11 @@ CRITERIA_WEIGHTS = {
     'reasonable_volatility': 1.2
 }
 
-# Position sizing
-TOTAL_CAPITAL = 10000  # Example capital
-RISK_TOLERANCE = 0.02  # 2%
-MAX_ALLOCATION_PER_ASSET = 0.1  # 10%
+
+TOTAL_CAPITAL = 10000  
+RISK_TOLERANCE = 0.02 
+MAX_ALLOCATION_PER_ASSET = 0.1  
 DIVERSIFICATION_FACTOR = 0.5
 
-# Output
-OUTPUT_FORMAT = 'text'  # 'text', 'json', 'csv'
+
+OUTPUT_FORMAT = 'text' 
