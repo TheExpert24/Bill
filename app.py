@@ -3,71 +3,92 @@ import sys
 import os
 sys.path.append(os.path.dirname(__file__))
 
-from data_ingestion.tickers import get_sample_us_tickers, get_all_us_tickers
+from tickers import get_sample_us_tickers, get_all_us_tickers
 from main import main as run_engine
-import config.config as cfg
+import config as cfg
 
 app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    print("Index route executed")  # Debugging print statement
+    print("Index route executed")
     if request.method == 'POST':
-        # Get user inputs
         capital = float(request.form['capital'])
-        risk_tolerance = float(request.form['risk_tolerance']) / 100  # Convert % to decimal
+        num_stocks = int(request.form['num_stocks'])
+        risk_tolerance = float(request.form['risk_tolerance']) / 100
         goal = request.form['goal']
         time_horizon = request.form['time_horizon']
 
-        # Adjust config based on inputs
         cfg.TOTAL_CAPITAL = capital
         cfg.RISK_TOLERANCE = risk_tolerance
 
         if goal == 'conservative':
-            cfg.MAX_ALLOCATION_PER_ASSET = 0.05  # 5%
-            cfg.DIVERSIFICATION_FACTOR = 0.3
+            cfg.MAX_ALLOCATION_PER_ASSET = 0.20
+            cfg.DIVERSIFICATION_FACTOR = 0.8
         elif goal == 'moderate':
-            cfg.MAX_ALLOCATION_PER_ASSET = 0.1  # 10%
-            cfg.DIVERSIFICATION_FACTOR = 0.5
+            cfg.MAX_ALLOCATION_PER_ASSET = 0.30
+            cfg.DIVERSIFICATION_FACTOR = 1.0
         elif goal == 'aggressive':
-            cfg.MAX_ALLOCATION_PER_ASSET = 0.15  # 15%
-            cfg.DIVERSIFICATION_FACTOR = 0.7
+            cfg.MAX_ALLOCATION_PER_ASSET = 0.40
+            cfg.DIVERSIFICATION_FACTOR = 1.2
 
-        # Get all available tickers
         try:
-            all_tickers = get_all_us_tickers()  # Fetch all market tickers
-        except:
-            return render_template('error.html', error="Failed to fetch tickers.")
-        tickers = all_tickers
+            all_tickers = get_all_us_tickers()
+            tickers = all_tickers
+            print(f"Analyzing {len(tickers)} stocks from S&P 500...")
+        except Exception as e:
+            print(f"Error fetching tickers: {e}")
+            return render_template('error.html', error="Failed to fetch stock tickers.")
 
-        # Run engine (modified main to return results instead of print)
+
         try:
-            recommendations = run_engine_web(tickers)
+            recommendations = run_engine_web(tickers, num_stocks)
             return render_template('results.html', recommendations=recommendations)
         except Exception as e:
             return render_template('error.html', error=str(e))
 
     return render_template('index.html')
 
-def run_engine_web(tickers):
-    """Modified version of main that returns recommendations as dict."""
-    from data_ingestion.api_client import MarketDataClient
-    from data_ingestion.scraper import NewsScraper
-    from preprocessing.normalize import normalize_price_data, normalize_fundamentals, normalize_news_headlines
-    from preprocessing.sentiment import batch_analyze_sentiment
-    from signals.indicators import (
+def run_engine_web(tickers, num_stocks):
+    """Modified version of main that returns recommendations as dict with hedge fund analysis."""
+    from api_client import MarketDataClient
+    from scraper import NewsScraper
+    from normalize import normalize_price_data, normalize_fundamentals, normalize_news_headlines
+    from sentiment import batch_analyze_sentiment
+    from indicators import (
         simple_moving_average, exponential_moving_average, relative_strength_index,
-        bollinger_bands, price_momentum_ratio, volatility, sentiment_shift_score
+        bollinger_bands, price_momentum_ratio, volatility, sentiment_shift_score,
+        sharpe_ratio, sortino_ratio, value_at_risk
     )
-    from rules.engine import RuleEngine, bullish_crossover, oversold_rsi, overbought_rsi, price_above_upper_band, low_pe_ratio, positive_sentiment_shift, high_sharpe_ratio, attractive_sortino, low_value_at_risk, strong_momentum, reasonable_volatility
-    from scoring.engine import ScoringEngine
-    from sizing.engine import PositionSizer
-    from database.db import get_session, save_asset, save_price_data, save_news
-    import config.config as cfg
+    import importlib
+    engines_rules = importlib.import_module('engines-rules')
+    RuleEngine = engines_rules.RuleEngine
+    bullish_crossover = engines_rules.bullish_crossover
+    oversold_rsi = engines_rules.oversold_rsi
+    overbought_rsi = engines_rules.overbought_rsi
+    price_above_upper_band = engines_rules.price_above_upper_band
+    low_pe_ratio = engines_rules.low_pe_ratio
+    positive_sentiment_shift = engines_rules.positive_sentiment_shift
+    high_sharpe_ratio = engines_rules.high_sharpe_ratio
+    attractive_sortino = engines_rules.attractive_sortino
+    low_value_at_risk = engines_rules.low_value_at_risk
+    strong_momentum = engines_rules.strong_momentum
+    reasonable_volatility = engines_rules.reasonable_volatility
+    
+    from engine import ScoringEngine
+    engine_sizing = importlib.import_module('engine-sizing')
+    PositionSizer = engine_sizing.PositionSizer
+    from db import get_session, save_asset, save_price_data, save_news
+    from hedge_fund_engine import HedgeFundEngine
+    from event_driven_engine import EventDrivenEngine
+    import config as cfg
 
     client = MarketDataClient()
     scraper = NewsScraper()
     session = get_session()
+    
+    hedge_engine = HedgeFundEngine()
+    event_engine = EventDrivenEngine()
 
     rule_engine = RuleEngine()
     rule_engine.add_rule(bullish_crossover)
@@ -88,37 +109,53 @@ def run_engine_web(tickers):
     asset_scores = {}
     current_prices = {}
     volatilities = {}
-    rule_results_dict = {}  # Store rule results per ticker
-    fundamentals_dict = {}  # Store fundamentals per ticker
-    recommendations = []  # Initialize recommendations as an empty list
+    rule_results_dict = {}
+    fundamentals_dict = {}
+    hedge_signals_dict = {}
+    event_signals_dict = {}
+    recommendations = []
+    
+    processed = 0
+    failed = 0
+    total = len(tickers)
 
     for ticker in tickers:
         try:
-            # Data ingestion
+            processed += 1
+            if processed % 10 == 0:
+                print(f"Progress: {processed}/{total} stocks processed...")
+                
             price_df = client.get_price_data(ticker, period=cfg.DATA_PERIOD)
+            
+            if price_df is None or len(price_df) < 50:
+                failed += 1
+                continue
+                
             fundamentals = client.get_fundamentals(ticker)
+            
+            news_headlines = []
             try:
                 news_headlines = client.get_company_news(ticker, page_size=cfg.NEWS_PAGE_SIZE)
             except:
-                news_headlines = []
+                pass
+                
+            scraped_headlines = []
             try:
-                scraped_headlines = scraper.scrape_yahoo_news(ticker, num_headlines=cfg.NEWS_PAGE_SIZE)
+                scraped_headlines = scraper.scrape_yahoo_news(ticker, num_headlines=5)
             except:
-                scraped_headlines = []
+                pass
+                
             all_headlines = news_headlines + scraped_headlines
 
-            # Normalization
             price_df = normalize_price_data(price_df)
             fundamentals_norm = normalize_fundamentals(fundamentals)
             headlines_norm = normalize_news_headlines(all_headlines)
             sentiment_scores = batch_analyze_sentiment(headlines_norm)
 
-            # Save to database
             asset_id = save_asset(session, ticker, **fundamentals_norm)
             save_price_data(session, asset_id, price_df)
             save_news(session, asset_id, headlines_norm, sentiment_score=sum(sentiment_scores)/len(sentiment_scores) if sentiment_scores else 0)
 
-            # Signal extraction
             close_prices = price_df['Close']
             signals = {
                 'close': close_prices,
@@ -134,35 +171,64 @@ def run_engine_web(tickers):
                 'var': value_at_risk(close_prices)
             }
 
+            hedge_analysis = hedge_engine.generate_composite_signal(
+                price_df, fundamentals_norm, sentiment_scores
+            )
+            
+            event_analysis = event_engine.generate_event_signal(
+                headlines_norm, price_df
+            )
+            
+            vol_regime = hedge_analysis['volatility_regime']['regime']
+            event_signal_adjusted = event_engine.filter_by_market_regime(
+                event_analysis['composite_signal'], vol_regime
+            )
+
             rule_results = rule_engine.evaluate(signals, fundamentals_norm)
             rule_results_dict[ticker] = rule_results
             fundamentals_dict[ticker] = fundamentals_norm
-            score = scoring_engine.score_asset(rule_results)
-            asset_scores[ticker] = score
+            
+            base_score = scoring_engine.score_asset(rule_results)
+            hedge_score = hedge_analysis['composite_score']
+            event_score = event_signal_adjusted
+            
+            combined_score = (base_score * 0.4) + (hedge_score * 0.4) + (event_score * 0.2)
+            
+            asset_scores[ticker] = combined_score
             current_prices[ticker] = signals['close'].iloc[-1]
             volatilities[ticker] = signals['volatility'].iloc[-1] if not signals['volatility'].empty else 0.2
+            hedge_signals_dict[ticker] = hedge_analysis
+            event_signals_dict[ticker] = event_analysis
+            
         except Exception as e:
-            print(f"Error processing {ticker}: {e}")
+            failed += 1
             continue
+    
+    print(f"Analysis complete: {processed} stocks processed, {failed} failed, {len(asset_scores)} scored successfully")
 
-    # Rank and size positions
     ranked = scoring_engine.rank_assets(asset_scores)
-    print(f"Ranked assets: {ranked}")  # Debugging: Check ranked assets
-    positions = sizer.size_positions(ranked, current_prices, volatilities)
-    print(f"Generated positions: {positions}")  # Debugging: Check generated positions
+    print(f"Ranked {len(ranked)} assets with scores")
+    
+    top_ranked = ranked[:num_stocks]
+    print(f"Selecting top {num_stocks} stocks for investment")
+    
+    positions = sizer.size_positions(top_ranked, current_prices, volatilities)
+    print(f"Generated {len(positions)} positions")
 
-    # If no positions, force top 2 recommendations
-    if not positions and ranked:
-        print("No positions generated, and no fallback recommendations will be provided.")  # Debugging
-        return []  # Return an empty list if no positions are generated
+    if not positions:
+        print("ERROR: No positions generated even after analysis")
+        return []
 
-    # Format recommendations with reasoning
     recommendations = []
     for ticker, shares in positions.items():
         cost = shares * current_prices[ticker]
-        # Generate reasoning based on actual rule results
+        score = asset_scores.get(ticker, 0)
+        
+        expected_return_pct = min(max((score / 10.0) * 15, 3), 25)
+        
         reasoning = []
         rules = rule_results_dict.get(ticker, {})
+        
         if rules.get('bullish_crossover'):
             reasoning.append("Bullish crossover: Short-term MA above long-term MA")
         if rules.get('oversold_rsi'):
@@ -181,6 +247,30 @@ def run_engine_web(tickers):
             reasoning.append("Strong momentum: Recent price strength")
         if rules.get('reasonable_volatility'):
             reasoning.append("Reasonable volatility: Balanced risk profile")
+        
+        hedge_sig = hedge_signals_dict.get(ticker, {})
+        if hedge_sig:
+            momentum_str = hedge_sig.get('momentum_signals', {}).get('momentum_strength', 0)
+            if momentum_str >= 3:
+                reasoning.append(f"Strong multi-timeframe momentum (score: {momentum_str}/4)")
+            
+            vol_regime = hedge_sig.get('volatility_regime', {}).get('regime', 'unknown')
+            if vol_regime == 'low':
+                reasoning.append("Low volatility regime: Favorable risk environment")
+            
+            factor_score = hedge_sig.get('factor_scores', {}).get('total_factor_score', 0)
+            if factor_score >= 6:
+                reasoning.append(f"High multi-factor score: {factor_score}")
+        
+        event_sig = event_signals_dict.get(ticker, {})
+        if event_sig:
+            if event_sig.get('earnings_event', {}).get('detected'):
+                reasoning.append("Positive earnings catalyst detected")
+            if event_sig.get('ma_event', {}).get('detected'):
+                reasoning.append("M&A activity detected")
+            if event_sig.get('product_event', {}).get('detected'):
+                reasoning.append("Product launch catalyst")
+        
         if not reasoning:
             reasoning.append("Meets configured criteria for potential opportunity")
 
@@ -192,7 +282,8 @@ def run_engine_web(tickers):
             'shares': shares,
             'price': round(current_prices[ticker], 2),
             'total_cost': round(cost, 2),
-            'score': round(asset_scores[ticker], 2),
+            'score': round(score, 2),
+            'expected_return': f"{expected_return_pct:.1f}%",
             'reasoning': reasoning
         })
 
