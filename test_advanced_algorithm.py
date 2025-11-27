@@ -27,12 +27,11 @@ def test_algorithm_components():
     print("\n2. Testing engine initialization...")
     try:
         engine = AdvancedHedgeFundEngine(
-            universe_size=50,
-            max_positions=10
+            universe_size=50
         )
         print("✓ Engine initialized successfully")
         print(f"  - Universe size: {engine.universe_size}")
-        print(f"  - Max positions: {engine.max_positions}")
+        print(f"  - Positions: Auto-determined by algorithm")
     except Exception as e:
         print(f"✗ Engine initialization failed: {e}")
         return

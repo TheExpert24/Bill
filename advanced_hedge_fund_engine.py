@@ -28,12 +28,11 @@ class AdvancedHedgeFundEngine:
     """
     
     def __init__(self, lookback_short=20, lookback_medium=50, lookback_long=200, 
-                 universe_size=200, max_positions=20):
+                 universe_size=200):
         self.lookback_short = lookback_short
         self.lookback_medium = lookback_medium
         self.lookback_long = lookback_long
         self.universe_size = universe_size
-        self.max_positions = max_positions
         
         # Signal weights - calibrated through backtesting
         self.signal_weights = {
@@ -438,6 +437,81 @@ class AdvancedHedgeFundEngine:
         random.shuffle(unique_fallback)
         
         return unique_fallback[:self.universe_size]
+    
+    def _determine_optimal_position_count(self, stock_scores, total_capital):
+        """
+        Automatically determine optimal number of positions based on:
+        - Signal quality distribution
+        - Available capital
+        - Risk diversification requirements
+        """
+        
+        if not stock_scores:
+            return 0
+        
+        # Get all qualifying stocks (positive score and decent quality)
+        qualifying_stocks = []
+        for ticker, signals in stock_scores.items():
+            if signals['composite_score'] > 0 and signals['signal_quality'] > 0.2:
+                qualifying_stocks.append((ticker, signals))
+        
+        if not qualifying_stocks:
+            return 0
+        
+        # Sort by score * quality
+        qualifying_stocks.sort(key=lambda x: x[1]['composite_score'] * x[1]['signal_quality'], reverse=True)
+        
+        # Method 1: Minimum position size constraint
+        min_position_value = total_capital * 0.01  # Minimum 1% per position
+        max_positions_by_size = len([stock for stock in qualifying_stocks 
+                                   if stock[1]['current_price'] >= min_position_value])
+        
+        # Method 2: Signal quality tiering
+        # Top tier: Score > 0.5 (high conviction)
+        # Middle tier: Score 0.3-0.5 (good conviction)  
+        # Lower tier: Score 0.0-0.3 (decent conviction)
+        
+        top_tier = [s for s in qualifying_stocks if s[1]['composite_score'] > 0.5]
+        middle_tier = [s for s in qualifying_stocks if 0.3 < s[1]['composite_score'] <= 0.5]
+        lower_tier = [s for s in qualifying_stocks if 0.0 < s[1]['composite_score'] <= 0.3]
+        
+        # Allocate positions based on quality tiers
+        optimal_count = len(top_tier)
+        
+        # Add middle tier positions (up to 60% of available capital)
+        remaining_capital = total_capital - (optimal_count * total_capital * 0.05)  # Assume 5% per top tier
+        if remaining_capital > total_capital * 0.4:  # If we have 40%+ capital left
+            middle_positions = min(len(middle_tier), 15)  # Max 15 middle tier
+            optimal_count += middle_positions
+        
+        # Add lower tier positions only if we still have significant capital
+        if remaining_capital > total_capital * 0.6:  # If 60%+ capital remains
+            lower_positions = min(len(lower_tier), 10)  # Max 10 lower tier
+            optimal_count += lower_positions
+        
+        # Method 3: Capital efficiency check
+        # Calculate theoretical minimum allocation for top candidates
+        if optimal_count > 0:
+            estimated_avg_allocation = total_capital / optimal_count
+            if estimated_avg_allocation < min_position_value * 0.5:  # Too small allocations
+                optimal_count = int(total_capital / (min_position_value * 0.5))
+        
+        # Method 4: Quality threshold
+        # Only include positions with sufficient signal quality
+        quality_positions = [s for s in qualifying_stocks[:optimal_count] 
+                           if s[1]['signal_quality'] > 0.25]
+        optimal_count = len(quality_positions)
+        
+        # Final constraints
+        min_positions = 5   # Minimum for diversification
+        max_positions = 35  # Maximum to avoid over-diversification
+        
+        optimal_count = max(min_positions, min(optimal_count, max_positions))
+        
+        # Ensure we don't exceed available high-quality opportunities
+        optimal_count = min(optimal_count, len(qualifying_stocks))
+        
+        return optimal_count
     
     def compute_factor_signals(self, price_data, fundamentals):
         """
@@ -974,12 +1048,15 @@ class AdvancedHedgeFundEngine:
         portfolio_positions = []
         total_value = 0
         
-        # Sort by composite score
+        # Auto-determine optimal number of positions based on signal quality
+        optimal_positions = self._determine_optimal_position_count(stock_scores, total_capital)
+        
+        # Sort by composite score and quality
         sorted_stocks = sorted(stock_scores.items(), 
                              key=lambda x: x[1]['composite_score'] * x[1]['signal_quality'], 
                              reverse=True)
         
-        for ticker, signals in sorted_stocks[:self.max_positions]:
+        for ticker, signals in sorted_stocks[:optimal_positions]:
             if signals['composite_score'] > 0 and signals['signal_quality'] > 0.3:
                 position_size = self.compute_position_size(
                     signals['composite_score'],

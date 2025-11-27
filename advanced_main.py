@@ -33,8 +33,7 @@ def main():
         lookback_short=20,
         lookback_medium=50, 
         lookback_long=200,
-        universe_size=300,  # Large universe for better opportunities
-        max_positions=25    # Higher position count for diversification
+        universe_size=300  # Large universe for better opportunities
     )
     
     # Generate dynamic stock universe

@@ -14,14 +14,11 @@
     </style>
 </head>
 <body>
-    <h1>Stock Market Analysis & Trade Recommendations</h1>
-    <p>Enter your investment requirements and goals to get personalized trade suggestions.</p>
+    <h1>Advanced Hedge Fund Algorithm</h1>
+    <p>Enter your investment requirements and goals. The algorithm will automatically determine the optimal number of positions for maximum profit.</p>
     <form method="POST">
         <label for="capital">Total Capital ($):</label>
         <input type="number" id="capital" name="capital" required min="100">
-
-        <label for="num_stocks">How many stocks do you want to invest in?:</label>
-        <input type="number" id="num_stocks" name="num_stocks" required min="1" max="100" value="10">
 
         <label for="risk_tolerance">Risk Tolerance (% per trade):</label>
         <input type="number" id="risk_tolerance" name="risk_tolerance" required min="0.1" max="10" step="0.1" value="2">

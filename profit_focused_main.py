@@ -26,15 +26,14 @@ def run_profit_optimized_algorithm():
     # Initialize with profit-focused settings
     print("\nInitializing profit-optimized engine...")
     engine = AdvancedHedgeFundEngine(
-        universe_size=ADVANCED_CONFIG['universe_size'],  # 500 stocks
-        max_positions=ADVANCED_CONFIG['max_positions']   # 30 positions
+        universe_size=ADVANCED_CONFIG['universe_size']  # 500 stocks
     )
     
     # Apply profit-focused signal weights
     engine.signal_weights = ADVANCED_CONFIG['signal_weights']
     print(f"✓ Engine initialized")
     print(f"  Universe: {engine.universe_size} stocks")
-    print(f"  Max positions: {engine.max_positions}")
+    print(f"  Positions: Auto-determined by algorithm")
     print(f"  Momentum weight: {engine.signal_weights['momentum_score']:.1%} (highest)")
     
     # Generate universe

@@ -293,7 +293,6 @@ class BacktestEngine:
                 # Update engine parameters
                 self.engine.signal_weights = params['signal_weights']
                 self.engine.universe_size = params['universe_size']
-                self.engine.max_positions = params['max_positions']
                 
                 # Run shortened backtest for optimization
                 backtest_results = self.run_backtest(
@@ -356,8 +355,7 @@ class BacktestEngine:
                                             'sentiment_score': sent_w,
                                             'stat_arb_score': stat_w
                                         },
-                                        'universe_size': parameter_ranges.get('universe_sizes', [200])[0],
-                                        'max_positions': parameter_ranges.get('max_positions', [20])[0]
+                                        'universe_size': parameter_ranges.get('universe_sizes', [200])[0]
                                     })
         
         return combinations[:50]  # Limit to avoid excessive computation

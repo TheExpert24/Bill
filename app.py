@@ -14,7 +14,6 @@ def index():
     print("Index route executed")
     if request.method == 'POST':
         capital = float(request.form['capital'])
-        num_stocks = int(request.form['num_stocks'])
         risk_tolerance = float(request.form['risk_tolerance']) / 100
         goal = request.form['goal']
         time_horizon = request.form['time_horizon']
@@ -42,14 +41,14 @@ def index():
 
 
         try:
-            recommendations = run_engine_web(tickers, num_stocks)
+            recommendations = run_engine_web(tickers)
             return render_template('results.html', recommendations=recommendations)
         except Exception as e:
             return render_template('error.html', error=str(e))
 
     return render_template('index.html')
 
-def run_engine_web(tickers, num_stocks):
+def run_engine_web(tickers):
     """Modified version of main that returns recommendations as dict with hedge fund analysis."""
     from api_client import MarketDataClient
     from scraper import NewsScraper
@@ -209,8 +208,26 @@ def run_engine_web(tickers, num_stocks):
     ranked = scoring_engine.rank_assets(asset_scores)
     print(f"Ranked {len(ranked)} assets with scores")
     
-    top_ranked = ranked[:num_stocks]
-    print(f"Selecting top {num_stocks} stocks for investment")
+    # Use advanced hedge fund engine for automatic position determination
+    from advanced_hedge_fund_engine import AdvancedHedgeFundEngine
+    hedge_engine_web = AdvancedHedgeFundEngine(universe_size=len(tickers))
+    
+    # Create stock scores in the format expected by the algorithm
+    stock_scores_for_auto = {}
+    for ticker, score in asset_scores.items():
+        stock_scores_for_auto[ticker] = {
+            'composite_score': score / 10.0,  # Normalize to 0-1 range
+            'signal_quality': min(abs(score / 10.0), 1.0),
+            'current_price': current_prices.get(ticker, 50.0)
+        }
+    
+    # Automatically determine optimal number of positions
+    optimal_position_count = hedge_engine_web._determine_optimal_position_count(stock_scores_for_auto, cfg.TOTAL_CAPITAL)
+    print(f"Algorithm automatically determined optimal position count: {optimal_position_count}")
+    
+    # Select top positions based on algorithm determination
+    top_ranked = ranked[:optimal_position_count]
+    print(f"Selecting top {optimal_position_count} stocks for investment")
     
     positions = sizer.size_positions(top_ranked, current_prices, volatilities)
     print(f"Generated {len(positions)} positions")

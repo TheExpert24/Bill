@@ -26,8 +26,7 @@ def demo_basic_usage():
     # Initialize the advanced engine
     print("\n1. Initializing Advanced Hedge Fund Engine...")
     engine = AdvancedHedgeFundEngine(
-        universe_size=ADVANCED_CONFIG['universe_size'],
-        max_positions=ADVANCED_CONFIG['max_positions']
+        universe_size=ADVANCED_CONFIG['universe_size']
     )
     
     # Configure signal weights
@@ -120,8 +119,7 @@ def demo_parameter_optimization():
         'vol_weights': [0.10, 0.15, 0.20],
         'sent_weights': [0.05, 0.10, 0.15],
         'stat_weights': [0.05, 0.10, 0.15],
-        'universe_sizes': [100],
-        'max_positions': [15]
+        'universe_sizes': [100]
     }
     
     # Initialize backtesting engine for optimization
@@ -219,7 +217,7 @@ def display_optimization_results(optimization_results):
             print(f"    {signal}: {weight:.3f}")
         
         print(f"  Optimal Universe Size: {best_params['universe_size']}")
-        print(f"  Optimal Max Positions: {best_params['max_positions']}")
+        print(f"  Optimal Positions: Auto-determined by algorithm")
     
     print(f"\nOptimization suggests focusing on:")
     print("  - Higher momentum weights for trending markets")

@@ -49,7 +49,6 @@ DIVERSIFICATION_FACTOR = 0.5
 ADVANCED_CONFIG = {
     # Engine parameters - AGGRESSIVE for higher returns
     'universe_size': 500,  # Larger universe for more opportunities
-    'max_positions': 30,   # More positions for diversification with profit focus
     'target_volatility': 0.20,  # Higher volatility tolerance for higher returns
     'correlation_threshold': 0.8,  # Looser correlation limits for more opportunities
     
