@@ -12,6 +12,14 @@ class GoogleAuth:
         self.client_id = os.environ.get('GOOGLE_CLIENT_ID')
         self.client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
         
+        # Debug logging
+        print(f"Debug: GOOGLE_CLIENT_ID = {'SET' if self.client_id else 'NOT SET'}")
+        print(f"Debug: GOOGLE_CLIENT_SECRET = {'SET' if self.client_secret else 'NOT SET'}")
+        
+        # Require environment variables for security
+        if not self.client_id or not self.client_secret:
+            raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables are required")
+        
         # Setup routes
         self.setup_routes()
     
