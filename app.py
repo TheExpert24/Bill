@@ -3,7 +3,19 @@ import sys
 import os
 import json
 from datetime import datetime
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 sys.path.append(os.path.dirname(__file__))
+
+# Global progress tracking
+global_analysis_progress = {
+    'processed': 0,
+    'total': 0,
+    'percentage': 0,
+    'status': 'Not started'
+}
+progress_lock = threading.Lock()
 
 from tickers import get_sample_us_tickers, get_all_us_tickers
 from main import main as run_engine
@@ -29,6 +41,11 @@ def index():
         if not user:
             return redirect(url_for('login'))
         
+        # Debug: Print the raw form data
+        print(f"DEBUG: Raw form data received:")
+        for key, value in request.form.items():
+            print(f"  {key}: {value}")
+        
         capital = float(request.form['capital'])
         risk_tolerance = float(request.form['risk_tolerance']) / 100
         goal = request.form['goal']
@@ -39,6 +56,10 @@ def index():
         session['analysis_risk_tolerance'] = risk_tolerance
         session['analysis_goal'] = goal
         session['analysis_time_horizon'] = time_horizon
+        
+        # Clear any old recommendations from session
+        session.pop('final_recommendations', None)
+        session.pop('analysis_progress', None)
         
         # Initialize progress tracking
         session['analysis_progress'] = {
@@ -89,6 +110,13 @@ def start_analysis():
         cfg.TOTAL_CAPITAL = capital
         cfg.RISK_TOLERANCE = risk_tolerance
         
+        # Debug: Print the actual values being used
+        print(f"DEBUG: User entered capital: ${capital}")
+        print(f"DEBUG: After float conversion: ${capital}")
+        print(f"DEBUG: Config TOTAL_CAPITAL before update: ${cfg.TOTAL_CAPITAL}")
+        print(f"DEBUG: Config TOTAL_CAPITAL after update: ${cfg.TOTAL_CAPITAL}")
+        print(f"DEBUG: Risk tolerance: {risk_tolerance}")
+        
         if goal == 'conservative':
             cfg.MAX_ALLOCATION_PER_ASSET = 0.20
             cfg.DIVERSIFICATION_FACTOR = 0.8
@@ -99,9 +127,9 @@ def start_analysis():
             cfg.MAX_ALLOCATION_PER_ASSET = 0.40
             cfg.DIVERSIFICATION_FACTOR = 1.2
 
-        all_tickers = get_all_us_tickers()
-        tickers = all_tickers
-        print(f"Analyzing {len(tickers)} stocks from S&P 500...")
+        all_tickers = get_all_us_tickers()  # Get full universe for comprehensive analysis
+        tickers = all_tickers  # Analyze all available stocks
+        print(f"Analyzing {len(tickers)} stocks for comprehensive recommendations...")
         
         # Update progress
         session['analysis_progress'] = {
@@ -112,7 +140,10 @@ def start_analysis():
         }
         
         # Run analysis with progress tracking - pass Flask session to the function
-        recommendations = run_engine_web(tickers, session)
+        recommendations = run_engine_web(tickers, session, capital)
+        
+        # Make recommendations JSON-safe immediately
+        recommendations = make_json_safe(recommendations)
         
         # Check if this is the user's first time
         session_db = get_session()
@@ -121,8 +152,16 @@ def start_analysis():
         # Generate combined recommendations (all actions in one table)
         combined_recommendations = generate_combined_recommendations(recommendations, user.id, is_first_time)
         
+        # Debug: Print what we're actually returning
+        print(f"DEBUG: Combined recommendations being returned:")
+        for i, rec in enumerate(combined_recommendations):
+            print(f"  {i+1}. {rec['ticker']}: {rec['action']} {rec['suggested_quantity']} shares @ ${rec.get('investment_amount', 0)}")
+        
+        total_investment = sum(rec.get('investment_amount', 0) for rec in combined_recommendations)
+        print(f"DEBUG: Total investment amount: ${total_investment}")
+        
         # Save recommendations to user account
-        save_user_recommendations(user.id, {
+        save_user_recommendations(user.id, make_json_safe({
             'capital': capital,
             'risk_tolerance': risk_tolerance,
             'goal': goal,
@@ -130,7 +169,7 @@ def start_analysis():
             'recommendations': recommendations,
             'predictions': combined_recommendations,
             'is_first_time': is_first_time
-        })
+        }))
         
         # Update user's portfolio with new recommendations
         if update_user_portfolio(session_db, user.id, recommendations):
@@ -138,18 +177,20 @@ def start_analysis():
         
         session_db.close()
         
-        # Update progress to completed
-        session['analysis_progress'] = {
+        # Update progress to completed in both global and session
+        final_progress = {
             'processed': len(tickers),
             'total': len(tickers),
             'percentage': 100,
             'status': 'Analysis complete!'
         }
-        session['final_recommendations'] = combined_recommendations
+        global_analysis_progress.update(final_progress)
+        session['analysis_progress'] = final_progress
+        session['final_recommendations'] = make_json_safe(combined_recommendations)
         
         return jsonify({
             'status': 'completed',
-            'combined_recommendations': combined_recommendations
+            'combined_recommendations': make_json_safe(combined_recommendations)
         })
         
     except Exception as e:
@@ -164,7 +205,10 @@ def start_analysis():
 @app.route('/api/progress')
 def get_progress():
     """API endpoint to get current analysis progress"""
-    progress = session.get('analysis_progress', {
+    global global_analysis_progress
+    
+    # Use global progress first, fallback to session
+    progress = global_analysis_progress if global_analysis_progress['total'] > 0 else session.get('analysis_progress', {
         'processed': 0,
         'total': 0,
         'percentage': 0,
@@ -175,13 +219,14 @@ def get_progress():
     if final_recs:
         return jsonify({
             'status': 'completed',
-            'progress': progress,
-            'recommendations': final_recs
+            'progress': make_json_safe(progress),
+            'recommendations': make_json_safe(final_recs),
+            'total': len(final_recs)
         })
     else:
         return jsonify({
             'status': 'in_progress',
-            'progress': progress
+            'progress': make_json_safe(progress)
         })
 
 @app.route('/accounts')
@@ -266,9 +311,64 @@ def generate_combined_recommendations(recommendations, user_id, is_first_time):
     user_holdings = {pos.ticker: pos for pos in current_portfolio}
     session_db.close()
     
+    # Helper function to build reasoning from recommendation data
+    def build_reasoning(rec):
+        reasoning = []
+        rules = rec.get('rule_results', {})
+        
+        # Convert any non-JSON serializable values
+        if isinstance(rules, dict):
+            rules = make_json_safe(rules)
+        
+        if rules.get('bullish_crossover'):
+            reasoning.append("Bullish crossover: Short-term MA above long-term MA")
+        if rules.get('oversold_rsi'):
+            reasoning.append("Oversold RSI: Price may be undervalued")
+        if rules.get('low_pe_ratio'):
+            reasoning.append("Low P/E ratio: Attractive valuation")
+        if rules.get('positive_sentiment_shift'):
+            reasoning.append("Positive sentiment shift in news")
+        if rules.get('high_sharpe_ratio'):
+            reasoning.append("High Sharpe ratio: Excellent risk-adjusted returns")
+        if rules.get('attractive_sortino'):
+            reasoning.append("Strong Sortino ratio: Good downside protection")
+        if rules.get('low_value_at_risk'):
+            reasoning.append("Low Value at Risk: Limited tail risk")
+        if rules.get('strong_momentum'):
+            reasoning.append("Strong momentum: Recent price strength")
+        if rules.get('reasonable_volatility'):
+            reasoning.append("Reasonable volatility: Balanced risk profile")
+        
+        # Add hedge fund signals
+        hedge_sig = rec.get('hedge_signals', {})
+        if hedge_sig:
+            momentum_str = hedge_sig.get('momentum_signals', {}).get('momentum_strength', 0)
+            if momentum_str >= 3:
+                reasoning.append(f"Strong multi-timeframe momentum (score: {momentum_str}/4)")
+            
+            vol_regime = hedge_sig.get('volatility_regime', {}).get('regime', 'unknown')
+            if vol_regime == 'low':
+                reasoning.append("Low volatility regime: Favorable risk environment")
+        
+        # Add event signals
+        event_sig = rec.get('event_signals', {})
+        if event_sig:
+            if event_sig.get('earnings_event', {}).get('detected'):
+                reasoning.append("Positive earnings catalyst detected")
+            if event_sig.get('ma_event', {}).get('detected'):
+                reasoning.append("M&A activity detected")
+            if event_sig.get('product_event', {}).get('detected'):
+                reasoning.append("Product launch catalyst")
+        
+        if not reasoning:
+            reasoning.append("Meets configured criteria for potential opportunity")
+        
+        return reasoning
+    
     if is_first_time:
         # For first-time users, show all recommendations as BUY actions
         for rec in recommendations:
+            reasoning = build_reasoning(rec)
             combined.append({
                 'ticker': rec['ticker'],
                 'action': 'BUY',
@@ -277,7 +377,7 @@ def generate_combined_recommendations(recommendations, user_id, is_first_time):
                 'investment_amount': rec['total_cost'],
                 'confidence': 85,
                 'score': rec['score'],
-                'reasoning': f"Build your initial portfolio with {rec['ticker']}. " + "; ".join(rec['reasoning']),
+                'reasoning': f"Build your initial portfolio with {rec['ticker']}. " + "; ".join(reasoning),
                 'is_new': True
             })
     else:
@@ -289,7 +389,7 @@ def generate_combined_recommendations(recommendations, user_id, is_first_time):
         for rec in recommendations:
             ticker = rec['ticker']
             score = rec['score']
-            price = rec['price']
+            price = rec['current_price']
             shares = rec['shares']
             
             if ticker in user_holdings:
@@ -314,7 +414,8 @@ def generate_combined_recommendations(recommendations, user_id, is_first_time):
                 # New stock recommendation
                 action = 'BUY'
                 confidence = min(90, 65 + (score - avg_score) * 8)
-                reasoning = f"New opportunity: Strong buy signal for diversification. " + "; ".join(rec['reasoning'])
+                reasoning_list = build_reasoning(rec)
+                reasoning = f"New opportunity: Strong buy signal for diversification. " + "; ".join(reasoning_list)
                 investment = rec['total_cost']
             
             combined.append({
@@ -326,359 +427,255 @@ def generate_combined_recommendations(recommendations, user_id, is_first_time):
                 'confidence': confidence,
                 'score': score,
                 'reasoning': reasoning,
-                'is_new': ticker not in user_holdings
+                'is_new': bool(ticker not in user_holdings)  # Ensure it's a proper bool
             })
-    
-    # Add some additional market opportunities
-    if not is_first_time:
-        market_ops = suggest_market_opportunities(avg_score)
-        combined.extend(market_ops)
     
     return combined
 
-def suggest_market_opportunities(avg_score):
-    """Suggest additional market opportunities"""
-    opportunities = []
+def make_json_safe(obj):
+    """Convert data structure to be JSON-safe by handling numpy and boolean types"""
+    import numpy as np
     
-    # Add some popular stocks for diversification
-    market_stocks = [
-        {'ticker': 'AAPL', 'score': avg_score + 1.5, 'price': 150.0, 'shares': 5},
-        {'ticker': 'MSFT', 'score': avg_score + 1.2, 'price': 280.0, 'shares': 3},
-    ]
-    
-    for stock in market_stocks:
-        opportunities.append({
-            'ticker': stock['ticker'],
-            'action': 'BUY',
-            'current_shares': 0,
-            'suggested_quantity': stock['shares'],
-            'investment_amount': stock['shares'] * stock['price'],
-            'confidence': 80,
-            'score': stock['score'],
-            'reasoning': f"Market opportunity: Strong fundamentals with {stock['shares']} shares recommended.",
-            'is_new': True
-        })
-    
-    return opportunities
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_safe(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return [make_json_safe(item) for item in obj]
+    elif isinstance(obj, (np.bool_, bool)):  # Handle both numpy and Python booleans
+        return bool(obj)
+    elif isinstance(obj, (np.integer, np.floating)):  # Handle numpy numbers
+        return obj.item()
+    elif isinstance(obj, np.ndarray):  # Handle numpy arrays
+        return obj.tolist()
+    elif hasattr(obj, 'item') and callable(getattr(obj, 'item')):  # Handle other numpy scalars
+        try:
+            return obj.item()
+        except:
+            return str(obj)
+    elif hasattr(obj, 'tolist') and callable(getattr(obj, 'tolist')):  # Handle other numpy arrays
+        try:
+            return obj.tolist()
+        except:
+            return str(obj)
+    elif obj is True or obj is False:  # Explicit boolean check
+        return bool(obj)
+    else:
+        return obj
 
-def run_engine_web(tickers, flask_session=None):
-    """Modified version of main that returns recommendations as dict with hedge fund analysis."""
-    from api_client import MarketDataClient
-    from scraper import NewsScraper
-    from normalize import normalize_price_data, normalize_fundamentals, normalize_news_headlines
-    from sentiment import batch_analyze_sentiment
-    from indicators import (
-        simple_moving_average, exponential_moving_average, relative_strength_index,
-        bollinger_bands, price_momentum_ratio, volatility, sentiment_shift_score,
-        sharpe_ratio, sortino_ratio, value_at_risk
-    )
-    import importlib
-    engines_rules = importlib.import_module('engines-rules')
-    RuleEngine = engines_rules.RuleEngine
-    bullish_crossover = engines_rules.bullish_crossover
-    oversold_rsi = engines_rules.oversold_rsi
-    overbought_rsi = engines_rules.overbought_rsi
-    price_above_upper_band = engines_rules.price_above_upper_band
-    low_pe_ratio = engines_rules.low_pe_ratio
-    positive_sentiment_shift = engines_rules.positive_sentiment_shift
-    high_sharpe_ratio = engines_rules.high_sharpe_ratio
-    attractive_sortino = engines_rules.attractive_sortino
-    low_value_at_risk = engines_rules.low_value_at_risk
-    strong_momentum = engines_rules.strong_momentum
-    reasonable_volatility = engines_rules.reasonable_volatility
+def analyze_single_stock(ticker, total_stocks, flask_session=None):
+    """Analyze a single stock - optimized for parallel execution"""
+    global global_analysis_progress
     
-    from engine import ScoringEngine
-    engine_sizing = importlib.import_module('engine-sizing')
-    PositionSizer = engine_sizing.PositionSizer
-    from db import get_session, save_asset, save_price_data, save_news
-    from hedge_fund_engine import HedgeFundEngine
-    from event_driven_engine import EventDrivenEngine
-    import config as cfg
+    try:
+        from api_client import MarketDataClient
+        from normalize import normalize_price_data, normalize_fundamentals, normalize_news_headlines
+        from sentiment import batch_analyze_sentiment
+        from indicators import (
+            simple_moving_average, relative_strength_index,
+            bollinger_bands, price_momentum_ratio, volatility, sentiment_shift_score,
+            sharpe_ratio, sortino_ratio, value_at_risk
+        )
+        import importlib
+        engines_rules = importlib.import_module('engines-rules')
+        from hedge_fund_engine import HedgeFundEngine
+        from event_driven_engine import EventDrivenEngine
+        import config as cfg
+        
+        client = MarketDataClient()
+        hedge_engine = HedgeFundEngine()
+        event_engine = EventDrivenEngine()
+        
+        # Get price data
+        price_df = client.get_price_data(ticker, period=cfg.DATA_PERIOD)
+        if price_df is None or len(price_df) < 50:
+            return None
+            
+        # Get fundamentals
+        fundamentals = client.get_fundamentals(ticker)
+        
+        # Reduced news fetching for speed
+        try:
+            news_headlines = client.get_company_news(ticker, page_size=2)  # Reduced for speed
+        except:
+            news_headlines = []
 
-    client = MarketDataClient()
-    scraper = NewsScraper()
-    db_session = get_session()  # Use different variable name to avoid Flask session conflict
+        # Process data
+        price_df = normalize_price_data(price_df)
+        fundamentals_norm = normalize_fundamentals(fundamentals)
+        headlines_norm = normalize_news_headlines(news_headlines)
+        sentiment_scores = batch_analyze_sentiment(headlines_norm)
+
+        close_prices = price_df['Close']
+        signals = {
+            'close': close_prices,
+            'sma_20': simple_moving_average(close_prices, cfg.SMA_SHORT_WINDOW),
+            'sma_50': simple_moving_average(close_prices, cfg.SMA_LONG_WINDOW),
+            'rsi': relative_strength_index(close_prices, cfg.RSI_WINDOW),
+            'upper_band': bollinger_bands(close_prices, cfg.BB_WINDOW, cfg.BB_NUM_STD)[0],
+            'momentum': price_momentum_ratio(close_prices, cfg.MOMENTUM_PERIOD),
+            'volatility': volatility(close_prices, cfg.VOLATILITY_WINDOW),
+            'sentiment_shift': sentiment_shift_score(sentiment_scores, cfg.SENTIMENT_WINDOW),
+            'sharpe': sharpe_ratio(close_prices),
+            'sortino': sortino_ratio(close_prices),
+            'var': value_at_risk(close_prices)
+        }
+
+        # Generate analysis
+        hedge_analysis = hedge_engine.generate_composite_signal(
+            price_df, fundamentals_norm, sentiment_scores
+        )
+        event_analysis = event_engine.generate_event_signal(headlines_norm, price_df)
+        vol_regime = hedge_analysis['volatility_regime']['regime']
+        event_signal_adjusted = event_engine.filter_by_market_regime(
+            event_analysis['composite_signal'], vol_regime
+        )
+
+        # Rule engine analysis
+        from engine import ScoringEngine
+        rule_engine = engines_rules.RuleEngine()
+        rule_engine.add_rule(engines_rules.bullish_crossover)
+        rule_engine.add_rule(engines_rules.oversold_rsi)
+        rule_engine.add_rule(engines_rules.overbought_rsi)
+        rule_engine.add_rule(engines_rules.low_pe_ratio)
+        rule_engine.add_rule(engines_rules.positive_sentiment_shift)
+        rule_engine.add_rule(engines_rules.high_sharpe_ratio)
+        
+        scoring_engine = ScoringEngine(cfg.CRITERIA_WEIGHTS)
+        rule_results = rule_engine.evaluate(signals, fundamentals_norm)
+        
+        base_score = scoring_engine.score_asset(rule_results)
+        hedge_score = hedge_analysis['composite_score']
+        event_score = event_signal_adjusted
+        combined_score = (base_score * 0.4) + (hedge_score * 0.4) + (event_score * 0.2)
+        
+        result = {
+            'ticker': ticker,
+            'score': combined_score,
+            'price': signals['close'].iloc[-1],
+            'volatility': signals['volatility'].iloc[-1] if not signals['volatility'].empty else 0.2,
+            'rule_results': rule_results,
+            'fundamentals': fundamentals_norm,
+            'hedge_signals': hedge_analysis,
+            'event_signals': event_analysis
+        }
+        
+        # Thread-safe progress update
+        with progress_lock:
+            global_analysis_progress['processed'] += 1
+            processed = global_analysis_progress['processed']
+            percentage = int((processed / total_stocks) * 100)
+            global_analysis_progress['percentage'] = percentage
+            global_analysis_progress['status'] = f'Analyzed {ticker} ({processed}/{total_stocks})'
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error analyzing {ticker}: {str(e)}")
+        with progress_lock:
+            global_analysis_progress['processed'] += 1
+        return None
+
+def run_engine_web(tickers, flask_session=None, user_capital=None):
+    """Parallel processing version - much faster than sequential"""
+    global global_analysis_progress
     
-    hedge_engine = HedgeFundEngine()
-    event_engine = EventDrivenEngine()
-
-    rule_engine = RuleEngine()
-    rule_engine.add_rule(bullish_crossover)
-    rule_engine.add_rule(oversold_rsi)
-    rule_engine.add_rule(overbought_rsi)
-    rule_engine.add_rule(price_above_upper_band)
-    rule_engine.add_rule(low_pe_ratio)
-    rule_engine.add_rule(positive_sentiment_shift)
-    rule_engine.add_rule(high_sharpe_ratio)
-    rule_engine.add_rule(attractive_sortino)
-    rule_engine.add_rule(low_value_at_risk)
-    rule_engine.add_rule(strong_momentum)
-    rule_engine.add_rule(reasonable_volatility)
-
-    scoring_engine = ScoringEngine(cfg.CRITERIA_WEIGHTS)
-    sizer = PositionSizer(cfg.TOTAL_CAPITAL, cfg.RISK_TOLERANCE, cfg.MAX_ALLOCATION_PER_ASSET, cfg.DIVERSIFICATION_FACTOR)
-
-    asset_scores = {}
-    current_prices = {}
-    volatilities = {}
-    rule_results_dict = {}
-    fundamentals_dict = {}
-    hedge_signals_dict = {}
-    event_signals_dict = {}
-    recommendations = []
+    # Use user-provided capital if available, otherwise use config
+    actual_capital = user_capital if user_capital is not None else cfg.TOTAL_CAPITAL
+    print(f"DEBUG: run_engine_web using capital: ${actual_capital}")
     
-    processed = 0
-    failed = 0
     total = len(tickers)
-
-    # Initialize progress tracking in Flask session if available
-    if flask_session:
-        flask_session['analysis_progress'] = {
+    
+    # Reset progress
+    with progress_lock:
+        global_analysis_progress.update({
             'processed': 0,
             'total': total,
             'percentage': 0,
-            'status': f'Starting analysis of {total} stocks...'
-        }
-
-    for ticker in tickers:
-        try:
-            processed += 1
-            # Update progress every 10 stocks but show cumulative count
-            if processed % 10 == 0:
-                percentage = int(processed/total*100)
-                print(f"Progress: {processed}/{total} stocks processed... ({percentage}%)")
-                
-                # Update progress in Flask session for real-time display
-                if flask_session:
-                    flask_session['analysis_progress'] = {
-                        'processed': processed,
-                        'total': total,
-                        'percentage': percentage,
-                        'status': f'Analyzing stock {processed} of {total}...'
-                    }
-                else:
-                    # Fallback: use globals
-                    if 'analysis_progress' in globals():
-                        globals()['analysis_progress'].update({
-                            'processed': processed,
-                            'total': total,
-                            'percentage': percentage,
-                            'status': f'Analyzing stock {processed} of {total}...'
-                        })
-                
-            price_df = client.get_price_data(ticker, period=cfg.DATA_PERIOD)
-            
-            if price_df is None or len(price_df) < 50:
-                failed += 1
-                continue
-                
-            fundamentals = client.get_fundamentals(ticker)
-            
-            news_headlines = []
-            try:
-                news_headlines = client.get_company_news(ticker, page_size=cfg.NEWS_PAGE_SIZE)
-            except:
-                pass
-                
-            scraped_headlines = []
-            try:
-                scraped_headlines = scraper.scrape_yahoo_news(ticker, num_headlines=5)
-            except:
-                pass
-                
-            all_headlines = news_headlines + scraped_headlines
-
-            price_df = normalize_price_data(price_df)
-            fundamentals_norm = normalize_fundamentals(fundamentals)
-            headlines_norm = normalize_news_headlines(all_headlines)
-            sentiment_scores = batch_analyze_sentiment(headlines_norm)
-
-            asset_id = save_asset(db_session, ticker, **fundamentals_norm)
-            save_price_data(db_session, asset_id, price_df)
-            save_news(db_session, asset_id, headlines_norm, sentiment_score=sum(sentiment_scores)/len(sentiment_scores) if sentiment_scores else 0)
-
-            close_prices = price_df['Close']
-            signals = {
-                'close': close_prices,
-                'sma_20': simple_moving_average(close_prices, cfg.SMA_SHORT_WINDOW),
-                'sma_50': simple_moving_average(close_prices, cfg.SMA_LONG_WINDOW),
-                'rsi': relative_strength_index(close_prices, cfg.RSI_WINDOW),
-                'upper_band': bollinger_bands(close_prices, cfg.BB_WINDOW, cfg.BB_NUM_STD)[0],
-                'momentum': price_momentum_ratio(close_prices, cfg.MOMENTUM_PERIOD),
-                'volatility': volatility(close_prices, cfg.VOLATILITY_WINDOW),
-                'sentiment_shift': sentiment_shift_score(sentiment_scores, cfg.SENTIMENT_WINDOW),
-                'sharpe': sharpe_ratio(close_prices),
-                'sortino': sortino_ratio(close_prices),
-                'var': value_at_risk(close_prices)
-            }
-
-            hedge_analysis = hedge_engine.generate_composite_signal(
-                price_df, fundamentals_norm, sentiment_scores
-            )
-            
-            event_analysis = event_engine.generate_event_signal(
-                headlines_norm, price_df
-            )
-            
-            vol_regime = hedge_analysis['volatility_regime']['regime']
-            event_signal_adjusted = event_engine.filter_by_market_regime(
-                event_analysis['composite_signal'], vol_regime
-            )
-
-            rule_results = rule_engine.evaluate(signals, fundamentals_norm)
-            rule_results_dict[ticker] = rule_results
-            fundamentals_dict[ticker] = fundamentals_norm
-            
-            base_score = scoring_engine.score_asset(rule_results)
-            hedge_score = hedge_analysis['composite_score']
-            event_score = event_signal_adjusted
-            
-            combined_score = (base_score * 0.4) + (hedge_score * 0.4) + (event_score * 0.2)
-            
-            asset_scores[ticker] = combined_score
-            current_prices[ticker] = signals['close'].iloc[-1]
-            volatilities[ticker] = signals['volatility'].iloc[-1] if not signals['volatility'].empty else 0.2
-            hedge_signals_dict[ticker] = hedge_analysis
-            event_signals_dict[ticker] = event_analysis
-            
-        except Exception as e:
-            failed += 1
-            continue
-    
-    print(f"Analysis complete: {processed} stocks processed, {failed} failed, {len(asset_scores)} scored successfully")
-
-    # Final progress update
-    if flask_session:
-        flask_session['analysis_progress'] = {
-            'processed': processed,
-            'total': total,
-            'percentage': 100,
-            'status': 'Generating recommendations...'
-        }
-    elif 'analysis_progress' in globals():
-        globals()['analysis_progress'].update({
-            'processed': processed,
-            'total': total,
-            'percentage': 100,
-            'status': 'Generating recommendations...'
+            'status': f'Starting parallel analysis of {total} stocks...'
         })
-
-    ranked = scoring_engine.rank_assets(asset_scores)
-    print(f"Ranked {len(ranked)} assets with scores")
     
-    # Use advanced hedge fund engine for automatic position determination
-    from advanced_hedge_fund_engine import AdvancedHedgeFundEngine
-    hedge_engine_web = AdvancedHedgeFundEngine(universe_size=len(tickers))
+    print(f"Starting parallel analysis of {total} stocks with up to 8 threads...")
     
-    # Create stock scores in the format expected by the algorithm
-    stock_scores_for_auto = {}
-    for ticker, score in asset_scores.items():
-        stock_scores_for_auto[ticker] = {
-            'composite_score': score / 10.0,  # Normalize to 0-1 range
-            'signal_quality': min(abs(score / 10.0), 1.0),
-            'current_price': current_prices.get(ticker, 50.0)
-        }
+    # Parallel processing with ThreadPoolExecutor
+    results = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_ticker = {executor.submit(analyze_single_stock, ticker, total, flask_session): ticker for ticker in tickers}
+        
+        for future in as_completed(future_to_ticker):
+            result = future.result()
+            if result:
+                results.append(result)
     
-    # Automatically determine optimal number of positions
-    optimal_position_count = hedge_engine_web._determine_optimal_position_count(stock_scores_for_auto, cfg.TOTAL_CAPITAL)
-    print(f"Algorithm automatically determined optimal position count: {optimal_position_count}")
+    print(f"Parallel analysis complete: {len(results)} stocks analyzed successfully!")
     
-    # Select top positions based on algorithm determination
-    top_ranked = ranked[:optimal_position_count]
-    print(f"Selecting top {optimal_position_count} stocks for investment")
+    # Process results
+    asset_scores = {r['ticker']: r['score'] for r in results}
+    current_prices = {r['ticker']: r['price'] for r in results}
+    volatilities = {r['ticker']: r['volatility'] for r in results}
+    rule_results_dict = {r['ticker']: r['rule_results'] for r in results}
+    fundamentals_dict = {r['ticker']: r['fundamentals'] for r in results}
+    hedge_signals_dict = {r['ticker']: r['hedge_signals'] for r in results}
+    event_signals_dict = {r['ticker']: r['event_signals'] for r in results}
     
-    positions = sizer.size_positions(top_ranked, current_prices, volatilities)
-    print(f"Generated {len(positions)} positions")
-
-    if not positions:
-        print("ERROR: No positions generated even after analysis")
-        return []
-
+    # Generate final recommendations
+    import importlib
+    engine_sizing = importlib.import_module('engine-sizing')
+    PositionSizer = engine_sizing.PositionSizer
+    
+    # Debug: Print the capital being used for position sizing
+    print(f"DEBUG: Creating PositionSizer with capital: ${actual_capital}")
+    print(f"DEBUG: Risk tolerance: {cfg.RISK_TOLERANCE}")
+    print(f"DEBUG: Max allocation per asset: {cfg.MAX_ALLOCATION_PER_ASSET}")
+    
+    sizer = PositionSizer(actual_capital, cfg.RISK_TOLERANCE, cfg.MAX_ALLOCATION_PER_ASSET, cfg.DIVERSIFICATION_FACTOR)
+    
+    # Filter stocks that meet the minimum score threshold
+    qualified_assets = [(ticker, score) for ticker, score in asset_scores.items() if score > cfg.MIN_SCORE_THRESHOLD]
+    qualified_assets.sort(key=lambda x: x[1], reverse=True)  # Sort by score descending
+    
+    print(f"Found {len(qualified_assets)} stocks above minimum score threshold ({cfg.MIN_SCORE_THRESHOLD})")
+    
+    # Use the position sizer to calculate actual positions
+    positions = sizer.size_positions(qualified_assets, current_prices, volatilities)
+    
     recommendations = []
+    total_portfolio_cost = 0
+    
     for ticker, shares in positions.items():
+        score = asset_scores[ticker]
         cost = shares * current_prices[ticker]
-        score = asset_scores.get(ticker, 0)
+        total_portfolio_cost += cost
         
-        expected_return_pct = min(max((score / 10.0) * 15, 3), 25)
-        
-        reasoning = []
-        rules = rule_results_dict.get(ticker, {})
-        
-        if rules.get('bullish_crossover'):
-            reasoning.append("Bullish crossover: Short-term MA above long-term MA")
-        if rules.get('oversold_rsi'):
-            reasoning.append("Oversold RSI: Price may be undervalued")
-        if rules.get('low_pe_ratio'):
-            reasoning.append("Low P/E ratio: Attractive valuation")
-        if rules.get('positive_sentiment_shift'):
-            reasoning.append("Positive sentiment shift in news")
-        if rules.get('high_sharpe_ratio'):
-            reasoning.append("High Sharpe ratio: Excellent risk-adjusted returns")
-        if rules.get('attractive_sortino'):
-            reasoning.append("Strong Sortino ratio: Good downside protection")
-        if rules.get('low_value_at_risk'):
-            reasoning.append("Low Value at Risk: Limited tail risk")
-        if rules.get('strong_momentum'):
-            reasoning.append("Strong momentum: Recent price strength")
-        if rules.get('reasonable_volatility'):
-            reasoning.append("Reasonable volatility: Balanced risk profile")
-        
-        hedge_sig = hedge_signals_dict.get(ticker, {})
-        if hedge_sig:
-            momentum_str = hedge_sig.get('momentum_signals', {}).get('momentum_strength', 0)
-            if momentum_str >= 3:
-                reasoning.append(f"Strong multi-timeframe momentum (score: {momentum_str}/4)")
-            
-            vol_regime = hedge_sig.get('volatility_regime', {}).get('regime', 'unknown')
-            if vol_regime == 'low':
-                reasoning.append("Low volatility regime: Favorable risk environment")
-            
-            factor_score = hedge_sig.get('factor_scores', {}).get('total_factor_score', 0)
-            if factor_score >= 6:
-                reasoning.append(f"High multi-factor score: {factor_score}")
-        
-        event_sig = event_signals_dict.get(ticker, {})
-        if event_sig:
-            if event_sig.get('earnings_event', {}).get('detected'):
-                reasoning.append("Positive earnings catalyst detected")
-            if event_sig.get('ma_event', {}).get('detected'):
-                reasoning.append("M&A activity detected")
-            if event_sig.get('product_event', {}).get('detected'):
-                reasoning.append("Product launch catalyst")
-        
-        if not reasoning:
-            reasoning.append("Meets configured criteria for potential opportunity")
-
-        fund = fundamentals_dict.get(ticker, {})
-        recommendations.append({
+        recommendation = {
             'ticker': ticker,
-            'company_name': fund.get('name', ticker),
-            'sector': fund.get('sector', 'N/A'),
-            'shares': shares,
-            'price': round(current_prices[ticker], 2),
-            'total_cost': round(cost, 2),
-            'score': round(score, 2),
-            'expected_return': f"{expected_return_pct:.1f}%",
-            'reasoning': reasoning
-        })
-
-    # Final progress update
-    if flask_session:
-        flask_session['analysis_progress'] = {
-            'processed': processed,
-            'total': total,
+            'score': float(score),  # Use the score variable defined above
+            'shares': int(shares),  # Ensure it's a Python int
+            'current_price': float(current_prices[ticker]),  # Ensure it's a Python float
+            'total_cost': float(cost),  # Ensure it's a Python float
+            'volatility': float(volatilities[ticker]),  # Ensure it's a Python float
+            'rule_results': make_json_safe(rule_results_dict[ticker]),
+            'fundamentals': make_json_safe(fundamentals_dict[ticker]),
+            'hedge_signals': make_json_safe(hedge_signals_dict[ticker]),
+            'event_signals': make_json_safe(event_signals_dict[ticker])
+        }
+        recommendations.append(recommendation)
+    
+    print(f"DEBUG: Portfolio summary - {len(recommendations)} positions, Total cost: ${total_portfolio_cost:.2f}, Budget: ${actual_capital}")
+    
+    if total_portfolio_cost > actual_capital:
+        print(f"WARNING: Portfolio cost (${total_portfolio_cost:.2f}) exceeds budget (${actual_capital})!")
+    
+    recommendations.sort(key=lambda x: x['score'], reverse=True)
+    
+    with progress_lock:
+        global_analysis_progress.update({
+            'processed': total,
             'percentage': 100,
             'status': 'Analysis complete!'
-        }
-    elif 'analysis_progress' in globals():
-        globals()['analysis_progress'].update({
-            'status': 'Analysis complete!'
         })
-
-    # Close database session
-    db_session.close()
-
+    
     return recommendations
-
 if __name__ == '__main__':
     app.run(debug=True, port=9999)
+

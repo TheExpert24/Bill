@@ -5,32 +5,107 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bill</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px;
+            background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('/static/bg.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            min-height: 100vh;
+            color: white;
+        }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
         .user-info { display: flex; align-items: center; gap: 15px; }
         .user-initial { width: 40px; height: 40px; border-radius: 50%; background: #007bff; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
         .logout-btn { padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; }
         .logout-btn:hover { background: #c82333; }
-        table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 30px; background: rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden; }
+        th, td { border: 1px solid rgba(255,255,255,0.2); padding: 12px; text-align: left; }
+        th { background-color: rgba(0,0,0,0.4); font-weight: 600; color: #f8f9fa; }
+        td { color: #f8f9fa; }
         .back { margin-top: 20px; display: flex; gap: 15px; }
-        .back a { padding: 10px; background: #007bff; color: white; text-decoration: none; }
-        .back a:hover { background: #0056b3; }
+        .back a { padding: 12px 20px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); transition: all 0.3s; }
+        .back a:hover { background: rgba(255,255,255,0.3); transform: translateY(-2px); }
+        h1, h2, h3 { color: white; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
         .buy { color: #28a745; font-weight: bold; }
         .buy-more { color: #17a2b8; font-weight: bold; }
         .sell { color: #dc3545; font-weight: bold; }
         .keep { color: #ffc107; font-weight: bold; }
         .new-badge { background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
         .existing-badge { background: #17a2b8; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
-        .progress-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        .progress-bar { width: 100%; height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden; }
-        .progress-fill { height: 100%; background: #007bff; transition: width 0.3s ease; }
-        .progress-text { text-align: center; margin-top: 10px; font-weight: bold; }
-        .analysis-status { text-align: center; color: #666; margin-bottom: 20px; }
-        .section-title { margin-top: 30px; margin-bottom: 15px; }
+        .progress-section { background: rgba(0,0,0,0.3); padding: 25px; border-radius: 15px; margin-bottom: 25px; border: 1px solid rgba(255,255,255,0.2); }
+        .progress-container { margin: 20px 0; }
+        .progress-bar { 
+            width: 100%; 
+            height: 25px; 
+            background: #e9ecef; 
+            border-radius: 12px; 
+            overflow: hidden; 
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .progress-fill { 
+            height: 100%; 
+            background: linear-gradient(90deg, #007bff 0%, #0056b3 50%, #007bff 100%);
+            transition: width 0.5s ease-in-out; 
+            position: relative;
+            animation: shimmer 2s infinite;
+        }
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                transparent 0%, 
+                rgba(255,255,255,0.3) 45%, 
+                rgba(255,255,255,0.6) 50%, 
+                rgba(255,255,255,0.3) 55%, 
+                transparent 100%
+            );
+            animation: progressGlow 2s infinite;
+        }
+        .progress-text { 
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-weight: bold;
+            font-size: 14px;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+            z-index: 1;
+        }
+        .progress-details {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .analysis-status { 
+            text-align: center; 
+            color: #f8f9fa; 
+            margin: 15px 0;
+            font-weight: 500;
+            font-size: 16px;
+        }
+        @keyframes shimmer {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        @keyframes progressGlow {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .section-title { margin-top: 30px; margin-bottom: 15px; color: #f8f9fa; }
         .loading-spinner {
-            border: 4px solid #f3f3f3;
+            border: 4px solid rgba(255,255,255,0.2);
             border-top: 4px solid #007bff;
             border-radius: 50%;
             width: 40px;
@@ -43,11 +118,11 @@
             100% { transform: rotate(360deg); }
         }
         .error-message {
-            background: #f8d7da;
-            color: #721c24;
+            background: rgba(248,215,218,0.2);
+            color: #f8d7da;
             padding: 15px;
-            border: 1px solid #f5c6cb;
-            border-radius: 5px;
+            border: 1px solid rgba(248,215,218,0.3);
+            border-radius: 10px;
             margin: 20px 0;
         }
     </style>
@@ -66,8 +141,16 @@
     <div class="progress-section" id="progress-section">
         <h3>Analyzing Stocks...</h3>
         <div class="loading-spinner" id="loading-spinner"></div>
-        <div class="progress-bar">
-            <div class="progress-fill" id="progress-fill" style="width: {{ analysis_progress.percentage }}%"></div>
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill" style="width: {{ analysis_progress.percentage }}%"></div>
+                <div class="progress-text" id="progress-text">{{ analysis_progress.percentage }}%</div>
+            </div>
+            <div class="progress-details">
+                <span id="stocks-processed">Processed: <strong id="processed-count">{{ analysis_progress.processed or 0 }}</strong></span>
+                <span id="stocks-total">Total: <strong id="total-count">{{ analysis_progress.total or 0 }}</strong></span>
+                <span id="eta">ETA: <strong id="eta-time">Calculating...</strong></span>
+            </div>
         </div>
         <div class="analysis-status" id="analysis-status">
             {{ analysis_progress.status }}
@@ -107,13 +190,57 @@
     <script>
         let analysisInProgress = false;
         let pollInterval;
+        let analysisStartTime;
+        let lastProcessedCount = 0;
 
         function updateProgress(progress) {
             const fill = document.getElementById('progress-fill');
+            const text = document.getElementById('progress-text');
             const status = document.getElementById('analysis-status');
+            const processedCount = document.getElementById('processed-count');
+            const totalCount = document.getElementById('total-count');
+            const etaTime = document.getElementById('eta-time');
             
-            if (fill) fill.style.width = progress.percentage + '%';
-            if (status) status.textContent = progress.status;
+            const percentage = Math.round(progress.percentage || 0);
+            
+            if (fill) {
+                fill.style.width = percentage + '%';
+            }
+            if (text) {
+                text.textContent = percentage + '%';
+            }
+            if (status) {
+                status.textContent = progress.status || 'Processing...';
+            }
+            if (processedCount) {
+                processedCount.textContent = progress.processed || 0;
+            }
+            if (totalCount) {
+                totalCount.textContent = progress.total || 0;
+            }
+            
+            // Calculate ETA
+            if (etaTime && progress.processed && progress.total && analysisStartTime) {
+                const currentTime = new Date().getTime();
+                const elapsed = (currentTime - analysisStartTime) / 1000; // seconds
+                const processed = progress.processed;
+                const remaining = progress.total - processed;
+                
+                if (processed > 0 && remaining > 0) {
+                    const rate = processed / elapsed; // stocks per second
+                    const eta = remaining / rate; // seconds remaining
+                    
+                    if (eta < 60) {
+                        etaTime.textContent = Math.round(eta) + 's';
+                    } else if (eta < 3600) {
+                        etaTime.textContent = Math.round(eta / 60) + 'm';
+                    } else {
+                        etaTime.textContent = Math.round(eta / 3600) + 'h';
+                    }
+                } else {
+                    etaTime.textContent = 'Calculating...';
+                }
+            }
         }
 
         function showError(message) {
@@ -122,42 +249,55 @@
         }
 
         function showResults(recommendations) {
-            document.getElementById('progress-section').style.display = 'none';
-            document.getElementById('results-section').style.display = 'block';
-            document.getElementById('navigation-buttons').style.display = 'block';
+            // Complete the progress bar with animation
+            updateProgress({ percentage: 100, status: 'Analysis complete! Loading results...' });
             
-            const table = document.getElementById('recommendations-table');
-            
-            recommendations.forEach(rec => {
-                const row = table.insertRow();
-                row.innerHTML = `
-                    <td>
-                        ${rec.ticker}
-                        ${rec.is_new ? '<span class="new-badge">NEW</span>' : '<span class="existing-badge">EXISTING</span>'}
-                    </td>
-                    <td class="${rec.action.toLowerCase().replace(' ', '-')}">${rec.action}</td>
-                    <td>${rec.current_shares > 0 ? rec.current_shares + ' shares' : 'Not owned'}</td>
-                    <td>${
-                        rec.action === 'BUY' ? `Buy ${rec.suggested_quantity} shares` :
-                        rec.action === 'BUY MORE' ? `Buy ${rec.suggested_quantity} more shares` :
-                        rec.action === 'KEEP' ? 'Hold current position' :
-                        rec.action === 'SELL' ? `Sell ${rec.suggested_quantity} shares` :
-                        rec.action
-                    }</td>
-                    <td>${rec.investment_amount ? '$' + rec.investment_amount.toFixed(2) : '-'}</td>
-                    <td>${rec.confidence}%</td>
-                    <td>${rec.score.toFixed(2)}</td>
-                    <td>${rec.reasoning}</td>
-                `;
-            });
+            setTimeout(() => {
+                document.getElementById('progress-section').style.display = 'none';
+                document.getElementById('results-section').style.display = 'block';
+                document.getElementById('navigation-buttons').style.display = 'block';
+                
+                const table = document.getElementById('recommendations-table');
+                
+                recommendations.forEach(rec => {
+                    const row = table.insertRow();
+                    row.innerHTML = `
+                        <td>
+                            ${rec.ticker}
+                            ${rec.is_new ? '<span class="new-badge">NEW</span>' : '<span class="existing-badge">EXISTING</span>'}
+                        </td>
+                        <td class="${rec.action.toLowerCase().replace(' ', '-')}">${rec.action}</td>
+                        <td>${rec.current_shares > 0 ? rec.current_shares + ' shares' : 'Not owned'}</td>
+                        <td>${
+                            rec.action === 'BUY' ? `Buy ${rec.suggested_quantity} shares` :
+                            rec.action === 'BUY MORE' ? `Buy ${rec.suggested_quantity} more shares` :
+                            rec.action === 'KEEP' ? 'Hold current position' :
+                            rec.action === 'SELL' ? `Sell ${rec.suggested_quantity} shares` :
+                            rec.action
+                        }</td>
+                        <td>${rec.investment_amount ? '$' + rec.investment_amount.toFixed(2) : '-'}</td>
+                        <td>${rec.confidence}%</td>
+                        <td>${rec.score.toFixed(2)}</td>
+                        <td>${rec.reasoning}</td>
+                    `;
+                });
+            }, 1500);
         }
 
         function startAnalysis() {
             if (analysisInProgress) return;
             
             analysisInProgress = true;
+            analysisStartTime = new Date().getTime();
+            
             const btn = document.getElementById('start-analysis-btn');
+            const spinner = document.getElementById('loading-spinner');
+            
             if (btn) btn.style.display = 'none';
+            if (spinner) spinner.style.display = 'block';
+            
+            // Initialize progress display
+            updateProgress({ percentage: 0, processed: 0, total: 0, status: 'Initializing analysis...' });
             
             // Start the analysis
             fetch('/start_analysis', {
@@ -169,12 +309,14 @@
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'completed') {
-                    showResults(data.combined_recommendations);
+                    updateProgress({ percentage: 100, processed: data.total || 0, total: data.total || 0, status: 'Analysis completed!' });
+                    setTimeout(() => showResults(data.combined_recommendations), 1000);
                     analysisInProgress = false;
                 } else if (data.error) {
                     showError(data.error);
                     analysisInProgress = false;
                     if (btn) btn.style.display = 'block';
+                    if (spinner) spinner.style.display = 'none';
                 }
             })
             .catch(error => {
@@ -182,6 +324,7 @@
                 showError('An error occurred during analysis');
                 analysisInProgress = false;
                 if (btn) btn.style.display = 'block';
+                if (spinner) spinner.style.display = 'none';
             });
         }
 
@@ -192,15 +335,30 @@
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'completed') {
-                    showResults(data.recommendations);
+                    updateProgress({ 
+                        percentage: 100, 
+                        processed: data.total || 0, 
+                        total: data.total || 0, 
+                        status: 'Analysis completed!' 
+                    });
+                    setTimeout(() => showResults(data.recommendations), 1000);
                     clearInterval(pollInterval);
                     analysisInProgress = false;
                 } else if (data.status === 'in_progress') {
                     updateProgress(data.progress);
+                } else if (data.error) {
+                    showError(data.error);
+                    clearInterval(pollInterval);
+                    analysisInProgress = false;
+                    const btn = document.getElementById('start-analysis-btn');
+                    const spinner = document.getElementById('loading-spinner');
+                    if (btn) btn.style.display = 'block';
+                    if (spinner) spinner.style.display = 'none';
                 }
             })
             .catch(error => {
                 console.error('Progress check error:', error);
+                // Don't stop on network errors, just log them
             });
         }
 

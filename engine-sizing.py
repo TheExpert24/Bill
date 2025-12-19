@@ -50,9 +50,13 @@ class PositionSizer:
         
         allocations.sort(key=lambda x: x[3], reverse=True)
         
+        print(f"DEBUG: Starting position sizing with ${self.total_capital} capital")
         remaining_capital = self.total_capital
+        total_allocated = 0
+        
         for ticker, allocation, price, score in allocations:
             if remaining_capital <= 0:
+                print(f"DEBUG: Breaking - no remaining capital")
                 break
                 
             actual_allocation = min(allocation, remaining_capital)
@@ -60,8 +64,13 @@ class PositionSizer:
             if actual_allocation >= price:
                 shares = int(actual_allocation // price)
                 if shares > 0:
+                    cost = shares * price
                     positions[ticker] = shares
-                    remaining_capital -= shares * price
+                    remaining_capital -= cost
+                    total_allocated += cost
+                    print(f"DEBUG: {ticker}: {shares} shares @ ${price:.2f} = ${cost:.2f} (remaining: ${remaining_capital:.2f})")
+        
+        print(f"DEBUG: Final allocation - Used: ${total_allocated:.2f}, Remaining: ${remaining_capital:.2f}")
         
         if not positions and allocations:
             print(f"Warning: Capital too small for regular allocation. Using equal-weight for affordable stocks...")

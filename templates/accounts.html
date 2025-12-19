@@ -5,29 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bill</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px;
+            background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url('/static/bg.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            min-height: 100vh;
+            color: white;
+        }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
         .user-info { display: flex; align-items: center; gap: 15px; }
         .user-initial { width: 40px; height: 40px; border-radius: 50%; background: #007bff; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
         .logout-btn { padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; }
         .logout-btn:hover { background: #c82333; }
-        .back-btn { padding: 8px 16px; background: #6c757d; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; }
-        .back-btn:hover { background: #5a6268; }
-        .history-item { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f9f9f9; }
+        .back-btn { padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; border: 1px solid rgba(255,255,255,0.3); }
+        .back-btn:hover { background: rgba(255,255,255,0.3); }
+        .history-item { border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 20px; margin-bottom: 20px; background: rgba(0,0,0,0.3); }
         .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .date { color: #666; font-size: 0.9em; }
+        .date { color: #f8f9fa; font-size: 0.9em; }
         .investment-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; }
-        .detail-item { background: white; padding: 10px; border-radius: 4px; }
+        .detail-item { background: rgba(255,255,255,0.1); padding: 10px; border-radius: 4px; color: #f8f9fa; }
         .combined-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .combined-table th, .combined-table td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; }
-        .combined-table th { background-color: #f2f2f2; }
+        .combined-table th, .combined-table td { border: 1px solid rgba(255,255,255,0.2); padding: 8px; text-align: left; font-size: 0.9em; color: #f8f9fa; }
+        .combined-table th { background-color: rgba(0,0,0,0.4); }
         .buy { color: #28a745; font-weight: bold; }
         .buy-more { color: #17a2b8; font-weight: bold; }
         .sell { color: #dc3545; font-weight: bold; }
         .keep { color: #ffc107; font-weight: bold; }
         .new-badge { background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
         .existing-badge { background: #17a2b8; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
-        .no-history { text-align: center; color: #666; padding: 40px; }
+        .no-history { text-align: center; color: #f8f9fa; padding: 40px; }
     </style>
 </head>
 <body>

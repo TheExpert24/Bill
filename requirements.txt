@@ -8,3 +8,4 @@ numpy
 flask
 nltk  
 newsapi-python  
+dotenv

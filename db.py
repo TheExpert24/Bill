@@ -102,7 +102,7 @@ def update_user_portfolio(session, user_id, recommendations):
         for rec in recommendations:
             ticker = rec['ticker']
             shares = rec['shares']
-            price = rec['price']
+            price = rec.get('current_price', rec.get('price', 0))  # Handle both field names
             
             if ticker in current_positions:
                 # Update existing position

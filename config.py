@@ -39,6 +39,9 @@ CRITERIA_WEIGHTS = {
     'reasonable_volatility': 1.2
 }
 
+# Minimum score threshold for recommendations
+MIN_SCORE_THRESHOLD = 1.0  # Only recommend stocks with score > 1.0
+
 # Advanced Hedge Fund Configuration
 TOTAL_CAPITAL = 100000  # Increased capital for better diversification
 RISK_TOLERANCE = 0.02 
