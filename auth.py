@@ -9,8 +9,8 @@ from models import User
 class GoogleAuth:
     def __init__(self, app):
         self.app = app
-        self.client_id = os.environ.get('GOOGLE_CLIENT_ID', '361567581641-5hi9l5lktk4ni4ki60ju97r6fnh9no94.apps.googleusercontent.com')
-        self.client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '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')
+        self.client_id = os.environ.get('GOOGLE_CLIENT_ID')
+        self.client_secret = os.environ.get('GOOGLE_CLIENT_SECRET')
         
         # Setup routes
         self.setup_routes()
