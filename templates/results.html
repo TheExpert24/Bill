@@ -3,58 +3,222 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trade Recommendations</title>
+    <title>Bill</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
-        table { border-collapse: collapse; width: 100%; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .user-info { display: flex; align-items: center; gap: 15px; }
+        .user-initial { width: 40px; height: 40px; border-radius: 50%; background: #007bff; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .logout-btn { padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; }
+        .logout-btn:hover { background: #c82333; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
-        .back { margin-top: 20px; }
+        .back { margin-top: 20px; display: flex; gap: 15px; }
         .back a { padding: 10px; background: #007bff; color: white; text-decoration: none; }
         .back a:hover { background: #0056b3; }
+        .buy { color: #28a745; font-weight: bold; }
+        .buy-more { color: #17a2b8; font-weight: bold; }
+        .sell { color: #dc3545; font-weight: bold; }
+        .keep { color: #ffc107; font-weight: bold; }
+        .new-badge { background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
+        .existing-badge { background: #17a2b8; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
+        .progress-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .progress-bar { width: 100%; height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden; }
+        .progress-fill { height: 100%; background: #007bff; transition: width 0.3s ease; }
+        .progress-text { text-align: center; margin-top: 10px; font-weight: bold; }
+        .analysis-status { text-align: center; color: #666; margin-bottom: 20px; }
+        .section-title { margin-top: 30px; margin-bottom: 15px; }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
-    <h1>Your Personalized Trade Recommendations</h1>
-    {% if recommendations %}
-    <p>Based on your inputs, here are the suggested trades:</p>
-    <table>
-        <tr>
-            <th>Ticker</th>
-            <th>Company</th>
-            <th>Sector</th>
-            <th>Shares to Buy</th>
-            <th>Price per Share ($)</th>
-            <th>Total Cost ($)</th>
-            <th>Score</th>
-            <th>Expected Return (%)</th>
-            <th>Why This Trade</th>
-        </tr>
-        {% for rec in recommendations %}
-        <tr>
-            <td>{{ rec.ticker }}</td>
-            <td>{{ rec.company_name }}</td>
-            <td>{{ rec.sector }}</td>
-            <td>{{ rec.shares }}</td>
-            <td>{{ rec.price }}</td>
-            <td>{{ rec.total_cost }}</td>
-            <td>{{ rec.score }}</td>
-            <td>{{ rec.expected_return }}</td>
-            <td>
-                <ul>
-                {% for reason in rec.reasoning %}
-                    <li>{{ reason }}</li>
-                {% endfor %}
-                </ul>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% else %}
-    <p>No trade recommendations found based on current market conditions and your criteria. Try adjusting your risk tolerance or investment goals.</p>
-    {% endif %}
-    <div class="back">
-        <a href="/">Get New Recommendations</a>
+    <div class="header">
+        <h1>Your Investment Recommendations</h1>
+        <div class="user-info">
+            <div class="user-initial">A</div>
+            <span>Welcome back!</span>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
     </div>
+
+    {% if analysis_progress %}
+    <div class="progress-section" id="progress-section">
+        <h3>Analyzing Stocks...</h3>
+        <div class="loading-spinner" id="loading-spinner"></div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width: {{ analysis_progress.percentage }}%"></div>
+        </div>
+        <div class="analysis-status" id="analysis-status">
+            {{ analysis_progress.status }}
+        </div>
+        <button id="start-analysis-btn" style="margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            Start Analysis
+        </button>
+    </div>
+    {% endif %}
+
+    <div id="results-section" style="display: none;">
+        <h2 class="section-title"> Complete Investment Analysis</h2>
+        <p>All recommendations including new purchases, portfolio adjustments, and market opportunities:</p>
+        <table id="recommendations-table">
+            <tr>
+                <th>Ticker</th>
+                <th>Action</th>
+                <th>Current Holdings</th>
+                <th>Suggested Change</th>
+                <th>Investment Amount</th>
+                <th>Confidence</th>
+                <th>Score</th>
+                <th>Reasoning</th>
+            </tr>
+        </table>
+    </div>
+
+    <div id="error-section" style="display: none;">
+        <div class="error-message" id="error-message"></div>
+    </div>
+
+    <div class="back" id="navigation-buttons" style="display: none;">
+        <a href="/">Get New Recommendations</a>
+        <a href="/accounts">View My Investment History</a>
+    </div>
+
+    <script>
+        let analysisInProgress = false;
+        let pollInterval;
+
+        function updateProgress(progress) {
+            const fill = document.getElementById('progress-fill');
+            const status = document.getElementById('analysis-status');
+            
+            if (fill) fill.style.width = progress.percentage + '%';
+            if (status) status.textContent = progress.status;
+        }
+
+        function showError(message) {
+            document.getElementById('error-section').style.display = 'block';
+            document.getElementById('error-message').textContent = message;
+        }
+
+        function showResults(recommendations) {
+            document.getElementById('progress-section').style.display = 'none';
+            document.getElementById('results-section').style.display = 'block';
+            document.getElementById('navigation-buttons').style.display = 'block';
+            
+            const table = document.getElementById('recommendations-table');
+            
+            recommendations.forEach(rec => {
+                const row = table.insertRow();
+                row.innerHTML = `
+                    <td>
+                        ${rec.ticker}
+                        ${rec.is_new ? '<span class="new-badge">NEW</span>' : '<span class="existing-badge">EXISTING</span>'}
+                    </td>
+                    <td class="${rec.action.toLowerCase().replace(' ', '-')}">${rec.action}</td>
+                    <td>${rec.current_shares > 0 ? rec.current_shares + ' shares' : 'Not owned'}</td>
+                    <td>${
+                        rec.action === 'BUY' ? `Buy ${rec.suggested_quantity} shares` :
+                        rec.action === 'BUY MORE' ? `Buy ${rec.suggested_quantity} more shares` :
+                        rec.action === 'KEEP' ? 'Hold current position' :
+                        rec.action === 'SELL' ? `Sell ${rec.suggested_quantity} shares` :
+                        rec.action
+                    }</td>
+                    <td>${rec.investment_amount ? '$' + rec.investment_amount.toFixed(2) : '-'}</td>
+                    <td>${rec.confidence}%</td>
+                    <td>${rec.score.toFixed(2)}</td>
+                    <td>${rec.reasoning}</td>
+                `;
+            });
+        }
+
+        function startAnalysis() {
+            if (analysisInProgress) return;
+            
+            analysisInProgress = true;
+            const btn = document.getElementById('start-analysis-btn');
+            if (btn) btn.style.display = 'none';
+            
+            // Start the analysis
+            fetch('/start_analysis', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'completed') {
+                    showResults(data.combined_recommendations);
+                    analysisInProgress = false;
+                } else if (data.error) {
+                    showError(data.error);
+                    analysisInProgress = false;
+                    if (btn) btn.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError('An error occurred during analysis');
+                analysisInProgress = false;
+                if (btn) btn.style.display = 'block';
+            });
+        }
+
+        function checkProgress() {
+            if (!analysisInProgress) return;
+            
+            fetch('/api/progress')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'completed') {
+                    showResults(data.recommendations);
+                    clearInterval(pollInterval);
+                    analysisInProgress = false;
+                } else if (data.status === 'in_progress') {
+                    updateProgress(data.progress);
+                }
+            })
+            .catch(error => {
+                console.error('Progress check error:', error);
+            });
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            const startBtn = document.getElementById('start-analysis-btn');
+            if (startBtn) {
+                startBtn.addEventListener('click', startAnalysis);
+            }
+            
+            // Auto-start analysis if on progress page
+            if (startBtn && !analysisInProgress) {
+                setTimeout(startAnalysis, 1000); // Auto-start after 1 second
+            }
+            
+            // Poll for progress updates (more frequent for real-time feel)
+            pollInterval = setInterval(checkProgress, 1000);
+        });
+    </script>
 </body>
 </html>
