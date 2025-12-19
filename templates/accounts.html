@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bill</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .user-info { display: flex; align-items: center; gap: 15px; }
+        .user-initial { width: 40px; height: 40px; border-radius: 50%; background: #007bff; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .logout-btn { padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; }
+        .logout-btn:hover { background: #c82333; }
+        .back-btn { padding: 8px 16px; background: #6c757d; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; }
+        .back-btn:hover { background: #5a6268; }
+        .history-item { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; background: #f9f9f9; }
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .date { color: #666; font-size: 0.9em; }
+        .investment-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px; }
+        .detail-item { background: white; padding: 10px; border-radius: 4px; }
+        .combined-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .combined-table th, .combined-table td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; }
+        .combined-table th { background-color: #f2f2f2; }
+        .buy { color: #28a745; font-weight: bold; }
+        .buy-more { color: #17a2b8; font-weight: bold; }
+        .sell { color: #dc3545; font-weight: bold; }
+        .keep { color: #ffc107; font-weight: bold; }
+        .new-badge { background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
+        .existing-badge { background: #17a2b8; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; }
+        .no-history { text-align: center; color: #666; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>My Bill Account</h1>
+        <div class="user-info">
+            <div class="user-initial">{{ user.first_name[0]|upper }}{{ user.last_name[0]|upper }}</div>
+            <span>{{ user.first_name }} {{ user.last_name }}</span>
+            <a href="/logout" class="logout-btn">Logout</a>
+        </div>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+        <a href="/" class="back-btn">← Back to Home</a>
+        <a href="/" style="padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Get New Recommendations</a>
+    </div>
+
+    {% if recommendation_history %}
+        <h2>Your Investment History</h2>
+        <p>Total sessions: {{ recommendation_history|length }}</p>
+        
+        {% for history in recommendation_history %}
+        <div class="history-item">
+            <div class="history-header">
+                <h3>Investment Session #{{ history.id }}</h3>
+                <span class="date">{{ history.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            </div>
+            
+            <div class="investment-details">
+                <div class="detail-item">
+                    <strong>Capital:</strong> ${{ "%.2f"|format(history.capital) }}
+                </div>
+                <div class="detail-item">
+                    <strong>Risk Tolerance:</strong> {{ (history.risk_tolerance * 100)|round(1) }}%
+                </div>
+                <div class="detail-item">
+                    <strong>Goal:</strong> {{ history.goal.title() }}
+                </div>
+                <div class="detail-item">
+                    <strong>Time Horizon:</strong> {{ history.time_horizon.title() }}
+                </div>
+                <div class="detail-item">
+                    <strong>User Type:</strong> {{ 'First-time' if history.is_first_time else 'Returning' }}
+                </div>
+            </div>
+
+            {% if history.predictions %}
+            <h4>📊 Complete Investment Analysis</h4>
+            <p>All recommendations including new purchases, portfolio adjustments, and market opportunities:</p>
+            <table class="combined-table">
+                <tr>
+                    <th>Ticker</th>
+                    <th>Action</th>
+                    <th>Current Holdings</th>
+                    <th>Suggested Change</th>
+                    <th>Investment Amount</th>
+                    <th>Confidence</th>
+                    <th>Score</th>
+                    <th>Reasoning</th>
+                </tr>
+                {% for rec in history.predictions %}
+                <tr>
+                    <td>
+                        {{ rec.ticker }}
+                        {% if rec.is_new %}
+                            <span class="new-badge">NEW</span>
+                        {% else %}
+                            <span class="existing-badge">EXISTING</span>
+                        {% endif %}
+                    </td>
+                    <td class="{{ rec.action.lower().replace(' ', '-') }}">{{ rec.action }}</td>
+                    <td>
+                        {% if rec.current_shares and rec.current_shares > 0 %}
+                            {{ rec.current_shares }} shares
+                        {% else %}
+                            Not owned
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if rec.action == 'BUY' %}
+                            Buy {{ rec.suggested_quantity }} shares
+                        {% elif rec.action == 'BUY MORE' %}
+                            Buy {{ rec.suggested_quantity }} more shares
+                        {% elif rec.action == 'KEEP' %}
+                            Hold current position
+                        {% elif rec.action == 'SELL' %}
+                            Sell {{ rec.suggested_quantity }} shares
+                        {% else %}
+                            {{ rec.action }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if rec.investment_amount %}
+                            ${{ "%.2f"|format(rec.investment_amount) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>{{ rec.confidence }}%</td>
+                    <td>{{ rec.score|round(2) }}</td>
+                    <td>{{ rec.reasoning }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="no-history">
+            <h2>No Investment History Yet</h2>
+            <p>You haven't made any investment recommendations yet.</p>
+            <a href="/" style="padding: 10px; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">Get Your First Recommendation</a>
+        </div>
+    {% endif %}
+</body>
+</html>
