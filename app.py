@@ -677,5 +677,9 @@ def run_engine_web(tickers, flask_session=None, user_capital=None):
     
     return recommendations
 if __name__ == '__main__':
+    # For local development
     app.run(debug=True, port=9999)
+else:
+    # For production (Render)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
 
